@@ -1,0 +1,48 @@
+services:
+  aplicacion:
+    build: ./app # Construye la imagen de la aplicación usando el Dockerfile dentro de app/.
+    container_name: aplicacion_dinamica_web
+    ports:
+      - "${APP_PORT:-8080}:80" # Expone el puerto 80 del contenedor en el host, por defecto en 8080.
+    environment: # Variables para que PHP se conecte a MySQL a través del servicio interno.
+      DB_HOST: base_datos
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-aplicacion_dinamica}
+      DB_USER: ${MYSQL_USER:-usuario_app}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-clave_app}
+    volumes:
+      - ./app:/var/www/html # Monta el código local dentro del contenedor para desarrollo en vivo.
+    depends_on:
+      - base_datos # Indica que la aplicación debe arrancar después de la base de datos.
+    networks:
+      - red_aplicacion # Usa la red de aplicación compartida para comunicarse con la base de datos.
+
+  base_datos:
+    image: mysql:8.0
+    container_name: aplicacion_dinamica_bd
+    restart: unless-stopped
+    environment: # Configura el nombre de la base de datos y credenciales iniciales.
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-aplicacion_dinamica}
+      MYSQL_USER: ${MYSQL_USER:-usuario_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-clave_app}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-clave_root}
+    ports:
+      - "${DB_PORT:-3306}:3306" # El puerto de MySQL puede publicarse en el host si se necesita.
+    volumes:
+      - datos_mysql:/var/lib/mysql # Volumen persistente para que los datos no se pierdan si el contenedor se reinicia.
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro # Script de inicialización que se ejecuta al primer arranque de la base de datos.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"] # Comprueba que MySQL esté listo antes de marcar el servicio como saludable.
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - red_aplicacion
+
+volumes:
+  datos_mysql: # Volumen externo para almacenamiento persistente de la base de datos.
+
+networks:
+  red_aplicacion: # Red interna para que los contenedores se comuniquen por nombre.
+    driver: bridge
